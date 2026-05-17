@@ -29,8 +29,12 @@ from rs274.interpret import Translated, StatMixin
 DEFAULT_PORT   = "/dev/ttyHS1"
 DEFAULT_BAUD   = 115200
 SERIAL_TIMEOUT = 10          # 秒（長い移動への応答待ち）
-UNIT_MM        = 1.0         # linear_units の mm 表現
 INITCODE       = "G17 G40 G49 G80 G90"   # 標準初期化モーダル
+
+# rs274ngc の canon コールは常にインチ（内部単位）で渡される。
+# G-code ファイルが G21(mm) であっても変わらない。
+# このスケールファクタで全座標・送り速度を mm / mm/min に変換する。
+MM_PER_INCH = 25.4
 
 
 # ------------------------------------------------------------------ #
@@ -43,7 +47,7 @@ class FakeStat:
     """
     tool_table    = ()       # ツールなし（T0のみ）
     angular_units = 1.0      # degrees
-    linear_units  = UNIT_MM  # mm
+    linear_units  = 1.0      # 1.0 = inch (LinuxCNC stat convention); coordinates scaled by MM_PER_INCH in bridge
     axis_mask     = 0b111    # XYZ = 7
     block_delete  = False
 
@@ -98,14 +102,25 @@ class GrblBridge(Translated, StatMixin):
             if resp.startswith("["):
                 print(f"[grbl] {resp}", file=sys.stderr)
                 continue
+            if resp.startswith("ALARM"):
+                msg = f"grblHAL ALARM: {resp!r}  (sent: {line!r})"
+                print(f"[FATAL] {msg}", file=sys.stderr)
+                raise RuntimeError(msg)
             if resp.startswith("error"):
-                raise RuntimeError(f"grblHAL error: {resp!r}  (sent: {line!r})")
+                msg = f"grblHAL error: {resp!r}  (sent: {line!r})"
+                print(f"[FATAL] {msg}", file=sys.stderr)
+                raise RuntimeError(msg)
             if resp == "ok":
                 return
-            print(f"[warn] {resp!r}", file=sys.stderr)
+            print(f"[recv] {resp!r}", file=sys.stderr)
 
     def _update_pos(self, x, y, z):
         self.current_x, self.current_y, self.current_z = x, y, z
+
+    def get_external_length_units(self):
+        """rs274ngc の内部単位（inch）を mm で出力させる。
+        1 inch = 25.4 mm → 25.4 を返すことで座標・送り速度が mm / mm/min になる。"""
+        return 25.4
 
     # ---------------------------------------------------------------- #
     # Translated が要求するメソッド
@@ -113,12 +128,14 @@ class GrblBridge(Translated, StatMixin):
     # ---------------------------------------------------------------- #
 
     def straight_traverse_translated(self, x, y, z, a, b, c, u, v, w):
-        """G0 ラピッド移動"""
+        """G0 ラピッド移動（inch → mm 変換）"""
+        x *= MM_PER_INCH; y *= MM_PER_INCH; z *= MM_PER_INCH
         self._send(f"G0 X{x:.4f} Y{y:.4f} Z{z:.4f}")
         self._update_pos(x, y, z)
 
     def straight_feed_translated(self, x, y, z, a, b, c, u, v, w):
-        """G1 直線切削送り"""
+        """G1 直線切削送り（inch → mm 変換）"""
+        x *= MM_PER_INCH; y *= MM_PER_INCH; z *= MM_PER_INCH
         self._send(f"G1 X{x:.4f} Y{y:.4f} Z{z:.4f} F{self.feed_rate:.2f}")
         self._update_pos(x, y, z)
 
@@ -129,11 +146,13 @@ class GrblBridge(Translated, StatMixin):
 
     def arc_feed(self, x1, y1, cx, cy, rot, z1, a, b, c, u, v, w):
         """
-        G2/G3 円弧送り。
-        cx, cy : 円弧中心（絶対座標）
+        G2/G3 円弧送り（inch → mm 変換）。
+        cx, cy : 円弧中心（絶対座標、インチ）
         rot    : +1 = CCW (G3),  -1 = CW (G2)
-        grblHAL の I,J は現在位置からのオフセット。
+        grblHAL の I,J は現在位置からのオフセット（mm）。
         """
+        x1 *= MM_PER_INCH; y1 *= MM_PER_INCH; z1 *= MM_PER_INCH
+        cx *= MM_PER_INCH; cy *= MM_PER_INCH
         i = cx - self.current_x
         j = cy - self.current_y
         g = "G3" if rot > 0 else "G2"
@@ -148,8 +167,8 @@ class GrblBridge(Translated, StatMixin):
     # ---------------------------------------------------------------- #
 
     def set_feed_rate(self, rate):
-        """送り速度を保持（次の G1/G2/G3 に埋め込む）"""
-        self.feed_rate = rate
+        """送り速度を保持（inch/min → mm/min 変換）"""
+        self.feed_rate = rate * MM_PER_INCH
 
     def dwell(self, seconds):
         """G4 Pms ドウェル"""
@@ -222,6 +241,10 @@ class GrblBridge(Translated, StatMixin):
     # 呼ばれたメソッド名を警告表示して無視する（クラッシュ防止）
     # ---------------------------------------------------------------- #
 
+    def check_abort(self):
+        """rs274ngc が弧実行中に定期呼び出しする中断チェック。False = 継続。"""
+        return False
+
     def __getattr__(self, name):
         if name.startswith("_"):
             raise AttributeError(name)
@@ -258,9 +281,16 @@ def main():
     ser = None
     if not args.dry_run:
         ser = serial.Serial(args.port, args.baud, timeout=SERIAL_TIMEOUT)
-        # grblHAL 起動メッセージを読み捨て
         import time
         time.sleep(0.5)
+        ser.reset_input_buffer()
+        # アラーム状態を解除（前回エラー時に ALARM に入っていた場合の対策）
+        ser.write(b"$X\n")
+        time.sleep(0.3)
+        ser.reset_input_buffer()
+        # 現在位置をワーク原点にリセット（bridge の (0,0,0) と grblHAL を一致させる）
+        ser.write(b"G92 X0 Y0 Z0\n")
+        time.sleep(0.3)
         ser.reset_input_buffer()
 
     # parameter ファイル（G-code 変数の永続化）
@@ -278,8 +308,9 @@ def main():
         bridge  = GrblBridge(stat, ser)
         bridge.parameter_file = temp_var
 
-        # linear_units==1 → mm(G21), それ以外 → inch(G20)
-        unitcode = "G%d" % (20 + (stat.linear_units == UNIT_MM))
+        # G-code input is always mm (G21).
+        # Canon output units are controlled by get_external_length_units() → 25.4 → mm.
+        unitcode = "G21"
         initcode = INITCODE
 
         result, seq = gcode.parse(args.gcode_file, bridge, unitcode, initcode)
