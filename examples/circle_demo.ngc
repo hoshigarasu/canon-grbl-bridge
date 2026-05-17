@@ -1,0 +1,11 @@
+%
+; Pen plotter demo - 50mm diameter circle (single arc)
+G21 G90 G17 G94
+G0 Z5               ; pen up
+G0 X25 Y0           ; move to start
+G0 Z0               ; pen down
+G2 X25 Y0 I-25 J0 F5000  ; full circle CW
+G0 Z5               ; pen up
+G0 X0 Y0            ; return to origin
+M2
+%
