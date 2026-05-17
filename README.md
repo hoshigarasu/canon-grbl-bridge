@@ -1,3 +1,7 @@
+
+
+https://github.com/user-attachments/assets/2cb020cb-481f-4602-aa36-f6fba25e7d6d
+
 # canon-grbl-bridge
 
 **A Python bridge that connects the `rs274ngc` G-code interpreter to grblHAL over serial.**
