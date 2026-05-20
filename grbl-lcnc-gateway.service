@@ -1,0 +1,19 @@
+[Unit]
+Description=grbl-lcnc WebSocket Gateway (lcnc-suite UI + rs274ngc + grblHAL)
+After=network-online.target
+Wants=network-online.target
+# arduino-router系と排他: このサービス起動時に自動停止させる
+Conflicts=arduino-router.service arduino-router-serial.service arduino-app-cli.service
+
+[Service]
+User=arduino
+WorkingDirectory=/home/arduino/canon-grbl-bridge
+ExecStart=/usr/bin/python3 /home/arduino/canon-grbl-bridge/grbl_lcnc_gateway.py
+StandardOutput=journal
+StandardError=journal
+# 異常終了時のみ再起動（Ctrl+Cは再起動しない）
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
