@@ -246,3 +246,86 @@ LPUART1 port, VDDIO2 fix, LPUART BRR formula, and flash settings persistence.
 
 GPLv3 — same as grblHAL and LinuxCNC.
 See [LICENSE](LICENSE) for details.
+
+---
+
+## Rev.4 — WebUI Integration (grbl_lcnc_gateway.py)
+
+Rev.4 adds a WebSocket gateway that connects the
+[lcnc-suite](https://github.com/bildobodo/lcnc-suite) web frontend to the
+rs274ngc bridge and grblHAL backend.
+
+```
+lcnc-webui (Vue 3 — lcnc-suite)
+      │  WebSocket JSON (lcnc-suite protocol)
+      ▼
+grbl_lcnc_gateway.py          ← this file
+  ├─ status 30 Hz push        ← grblHAL ? polling
+  ├─ viewer_gcode             ← rs274ngc dry-run → toolpath preview
+  ├─ cycle_start / auto_step  ← rs274ngc → grblHAL streaming
+  ├─ jog (cont / incr / diag) ← $J= commands
+  ├─ WCS (G54–G59)            ← MDI passthrough with P0→Pn conversion
+  └─ Spindle / Coolant        ← M3/M4/M5/M7/M8/M9
+      │  ttyHS1 (115200 baud)
+      ▼
+grblHAL on STM32U585
+```
+
+### Additional requirements
+
+```bash
+# On QRB2210 (Debian 13 / Python 3.13)
+pip3 install fastapi uvicorn python-multipart gpiod --break-system-packages
+```
+
+### Build lcnc-webui (run once on a development machine with Node.js ≥ 20)
+
+```bash
+git clone https://github.com/bildobodo/lcnc-suite.git
+cd lcnc-suite/lcnc-webui
+npm install
+npm run build
+# Copy dist/ to QRB2210
+scp -r dist/ uno-q:~/canon-grbl-bridge/lcnc-webui/dist/
+```
+
+### Running as a systemd service (recommended)
+
+```bash
+sudo cp grbl-lcnc-gateway.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable grbl-lcnc-gateway
+sudo systemctl start grbl-lcnc-gateway
+```
+
+The service automatically stops `arduino-router.service` (Conflicts=) and
+manages GPIO70 (level shifter enable) via the `gpiod` Python library.
+
+### Manual start (for development / debugging)
+
+```bash
+# Stop conflicting services first
+sudo systemctl stop arduino-router.service arduino-router-serial.service arduino-app-cli.service
+
+cd ~/canon-grbl-bridge
+python3 grbl_lcnc_gateway.py [--port /dev/ttyHS1] [--web-port 8000]
+```
+
+Then open `http://192.168.0.52:8000` in a browser.
+
+### CoreXY note
+
+This project uses a CoreXY pen plotter. The grblHAL firmware must be compiled
+with `COREXY=1` (see [grblHAL-STM32U585](https://github.com/hoshigarasu/grblHAL-STM32U585))
+**and** `COREXY=1` must be added to the STM32CubeIDE Preprocessor settings:
+
+> Project Properties → C/C++ Build → Settings → MCU GCC Compiler → Preprocessor → Defined symbols
+
+### Step execution note
+
+`auto_step` (the Step button in lcnc-suite) is implemented as a simplified
+single-command executor: each button press sends one grblHAL command from the
+rs274ngc-generated command list. This does **not** correspond 1:1 to G-code
+blocks — a single G2/G3 arc produces one grblHAL command, while
+complex canned cycles may produce many.
+
