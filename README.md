@@ -311,7 +311,7 @@ cd ~/canon-grbl-bridge
 python3 grbl_lcnc_gateway.py [--port /dev/ttyHS1] [--web-port 8000]
 ```
 
-Then open `http://192.168.0.52:8000` in a browser.
+Then open `http://<QRB2210-IP>:8000` in a browser.
 
 ### CoreXY note
 
