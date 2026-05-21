@@ -1108,6 +1108,29 @@ async def get_gcode_content(path: str):
     return PlainTextResponse(content=file_path.read_text(errors="replace"))
 
 
+@app.put("/save")
+async def save_file(request: Request):
+    """GcodePanelのEditで編集したファイルを保存"""
+    body = await request.json()
+    path    = body.get("path", "")
+    content = body.get("content", "")
+    if not path:
+        raise HTTPException(status_code=400, detail="path is required")
+    file_path = Path(path)
+    # セキュリティ: アップロードディレクトリ配下のみ許可
+    try:
+        file_path.resolve().relative_to(NGC_UPLOAD_DIR.resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Path outside upload directory")
+    file_path.write_text(content)
+    log.info(f"Saved: {file_path} ({len(content)} bytes)")
+    # lcncWs._applyGcodeFileは同一パスを無視するため、
+    # file=nullを先送りして強制リセットしてからviewer_gcodeを再送する
+    await clients.broadcast({"type": "viewer_gcode", "data": {"file": None}})
+    asyncio.create_task(_send_viewer_gcode(str(file_path)))
+    return {"ok": True, "path": str(file_path), "size": len(content)}
+
+
 # ── NGC ファイルアップロード ──────────────────────────────────────────
 @app.post("/upload")
 async def upload_ngc(file: UploadFile = File(...)):
