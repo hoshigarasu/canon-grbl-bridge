@@ -1,0 +1,1 @@
+(function(){"use strict";let e=null;self.onmessage=t=>{const s=t.data;s.cmd==="start"?(e&&clearInterval(e),e=setInterval(()=>{self.postMessage(0)},1e3)):s.cmd==="stop"&&e&&(clearInterval(e),e=null)}})();

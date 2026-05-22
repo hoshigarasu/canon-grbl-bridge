@@ -62,7 +62,7 @@ POLL_INTERVAL   = 1.0 / STATUS_POLL_HZ
 GRBL_POLL_MS    = 100         # ? コマンド送信間隔 (ms)
 MM_PER_INCH     = 25.4
 INITCODE        = "G17 G40 G49 G80 G90"
-NGC_UPLOAD_DIR  = Path("/tmp/lcnc_uploads")
+NGC_UPLOAD_DIR  = Path("/home/arduino/ngc")
 WEBUI_DIST      = Path(__file__).parent / "lcnc-webui" / "dist"
 
 # lcnc.ts 定数
@@ -1058,7 +1058,7 @@ async def ws_endpoint(ws: WebSocket):
         await clients.remove(ws)
 
 
-SETTINGS_FILE = Path("/tmp/lcnc_gateway_settings.json")
+SETTINGS_FILE = Path("/home/arduino/.config/lcnc_gateway/settings.json")
 
 def _load_settings() -> dict:
     if SETTINGS_FILE.exists():
