@@ -1,5 +1,4 @@
 
-
 https://github.com/user-attachments/assets/2cb020cb-481f-4602-aa36-f6fba25e7d6d
 
 # canon-grbl-bridge
@@ -86,12 +85,31 @@ STM32U585, reachable via `/dev/ttyHS1` at 115200 baud.
 
 ## Installation
 
+### One-line installer (fresh Arduino UNO Q)
+
+Run this on a factory-fresh Arduino UNO Q (Debian 13 trixie / aarch64):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hoshigarasu/canon-grbl-bridge/main/install.sh | bash
+```
+
+The installer will:
+1. Install all system dependencies (linuxcnc-uspace, nodejs, npm, gpiod, …)
+2. Install Python packages (FastAPI, uvicorn, gpiod, …)
+3. Clone this repository
+4. Create persistent data directories
+5. Register and start the systemd service
+
+Once complete, open `http://<UNO-Q IP>:8000` in a browser.
+
+### Manual installation
+
 ```bash
 git clone https://github.com/hoshigarasu/canon-grbl-bridge.git
 cd canon-grbl-bridge
 ```
 
-No build step. The bridge is a single Python script.
+No build step for the bridge itself. The WebUI dist is included in the repository.
 
 ---
 
@@ -271,6 +289,16 @@ grbl_lcnc_gateway.py          ← this file
 grblHAL on STM32U585
 ```
 
+### Persistent data
+
+| Purpose | Path |
+|---------|------|
+| NGC files | `/home/arduino/ngc/` |
+| UI settings | `/home/arduino/.config/lcnc_gateway/settings.json` |
+
+Both paths survive reboots. NGC files uploaded via the browser UI are stored in
+`/home/arduino/ngc/` instead of `/tmp/`.
+
 ### Additional requirements
 
 ```bash
@@ -278,24 +306,27 @@ grblHAL on STM32U585
 pip3 install fastapi uvicorn python-multipart gpiod --break-system-packages
 ```
 
-### Build lcnc-webui (run once on a development machine with Node.js ≥ 20)
+### Updating the WebUI
+
+The pre-built `lcnc-webui/dist/` is included in this repository. To rebuild
+from the latest [lcnc-suite](https://github.com/bildobodo/lcnc-suite) source:
 
 ```bash
 git clone https://github.com/bildobodo/lcnc-suite.git
 cd lcnc-suite/lcnc-webui
 npm install
 npm run build
-# Copy dist/ to QRB2210
 scp -r dist/ uno-q:~/canon-grbl-bridge/lcnc-webui/dist/
+ssh uno-q 'sudo systemctl restart grbl-lcnc-gateway'
 ```
 
-### Running as a systemd service (recommended)
+### Service management
 
 ```bash
-sudo cp grbl-lcnc-gateway.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable grbl-lcnc-gateway
-sudo systemctl start grbl-lcnc-gateway
+sudo systemctl start   grbl-lcnc-gateway
+sudo systemctl stop    grbl-lcnc-gateway
+sudo systemctl restart grbl-lcnc-gateway
+sudo journalctl -u grbl-lcnc-gateway -f
 ```
 
 The service automatically stops `arduino-router.service` (Conflicts=) and
@@ -304,7 +335,6 @@ manages GPIO70 (level shifter enable) via the `gpiod` Python library.
 ### Manual start (for development / debugging)
 
 ```bash
-# Stop conflicting services first
 sudo systemctl stop arduino-router.service arduino-router-serial.service arduino-app-cli.service
 
 cd ~/canon-grbl-bridge
@@ -312,6 +342,16 @@ python3 grbl_lcnc_gateway.py [--port /dev/ttyHS1] [--web-port 8000]
 ```
 
 Then open `http://<QRB2210-IP>:8000` in a browser.
+
+### Operator workflow
+
+1. Open `http://<IP>:8000` in a browser
+2. Press **ARM**
+3. Press **Off** (= machine_on → enabled)
+4. Jog to verify tool position
+5. **Upload** or **Browse** to load an NGC file
+6. **Start** to run / **Step** for single-step execution
+7. **Zero X/Y/Z** to set work origin
 
 ### CoreXY note
 
@@ -329,3 +369,11 @@ rs274ngc-generated command list. This does **not** correspond 1:1 to G-code
 blocks — a single G2/G3 arc produces one grblHAL command, while
 complex canned cycles may produce many.
 
+### Hardware caution
+
+| Operation | Consequence |
+|-----------|-------------|
+| `gpioset 38=1` | Immediate QRB2210 shutdown |
+| OpenOCD reset without stopping service | STM32 reset → QRB2210 shutdown |
+| Unbinding ttyHS1 | Cannot rebind without reboot |
+| Writing APB registers while halted | Silently ignored (clock gating) |
