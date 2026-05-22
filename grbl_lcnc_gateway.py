@@ -711,6 +711,7 @@ async def handle_command(ws: WebSocket, msg: dict) -> dict:
                 return {"type": "reply", "ok": False, "error": str(e)}
 
         return {"type": "reply", "ok": True}
+    if cmd == "cycle_pause" or cmd == "feed_hold":
         if serial_bus:
             serial_bus.send_rt(b"!")  # Feed Hold
         with machine.lock:
