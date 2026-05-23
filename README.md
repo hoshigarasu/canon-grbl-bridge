@@ -1,4 +1,3 @@
-
 https://github.com/user-attachments/assets/2cb020cb-481f-4602-aa36-f6fba25e7d6d
 
 # canon-grbl-bridge
@@ -213,8 +212,6 @@ run; parameters do not persist between invocations by default.
 
 - **No position feedback**: the bridge tracks commanded position internally.
   If grblHAL loses steps, the bridge does not know.
-- **No feed hold / resume**: real-time grblHAL commands (`!`, `~`, `?`) are not
-  implemented. Stop with `Ctrl-C`; grblHAL will finish its planner buffer.
 - **Single stream**: only one G-code file runs at a time.
 - **Units**: the bridge initializes `rs274ngc` in mm (`G21`). The interpreter
   converts all coordinates internally, so G-code files using `G20` (inch) work
@@ -232,12 +229,6 @@ The STM32U585 has hardware quadrature decoder channels accessible via the UNO Q'
 underside expansion ports. Once the firmware exposes encoder counts over `ttyHS1`,
 the bridge can read actual position after each move and detect stalls — closing
 the loop between commanded and actual position.
-
-### Feed hold / resume / real-time status
-grblHAL's real-time command bytes (`!` feed hold, `~` resume, `?` status query)
-are single-byte commands that bypass the line buffer. The bridge will add a
-background thread to handle `Ctrl-C` gracefully, query machine state during
-long moves, and relay status back to the caller.
 
 ### 6-axis support
 The UNO Q underside connectors provide enough GPIO for three additional
@@ -281,6 +272,9 @@ grbl_lcnc_gateway.py          ← this file
   ├─ status 30 Hz push        ← grblHAL ? polling
   ├─ viewer_gcode             ← rs274ngc dry-run → toolpath preview
   ├─ cycle_start / auto_step  ← rs274ngc → grblHAL streaming
+  ├─ feed_hold / cycle_pause  ← grblHAL RT command ! (0x21)
+  ├─ cycle_resume             ← grblHAL RT command ~ (0x7E)
+  ├─ abort                    ← grblHAL RT command \x18
   ├─ jog (cont / incr / diag) ← $J= commands
   ├─ WCS (G54–G59)            ← MDI passthrough with P0→Pn conversion
   └─ Spindle / Coolant        ← M3/M4/M5/M7/M8/M9
@@ -298,6 +292,36 @@ grblHAL on STM32U585
 
 Both paths survive reboots. NGC files uploaded via the browser UI are stored in
 `/home/arduino/ngc/` instead of `/tmp/`.
+
+### Additional endpoints
+
+| URL | Method | Description |
+|-----|--------|-------------|
+| `/editor` | GET | Popup G-code editor (CodeMirror 5, monokai) |
+| `/active-file` | GET | Returns path of currently loaded NGC file |
+| `/read-file?path=…` | GET | Returns raw content of an NGC file |
+| `/save` | PUT | Save NGC file content |
+| `/grbl-settings` | GET | grblHAL `$$` parameter viewer/editor |
+| `/grbl-settings-data` | GET | Fetch all `$$` settings as JSON |
+| `/grbl-settings-data` | POST | Set a single `$N=value` parameter |
+
+### G-code popup editor
+
+The **Edit** button in the Program panel opens a full-window popup editor
+instead of the inline textarea. Features:
+
+- CodeMirror 5 with monokai theme
+- **Save** (Ctrl+S) — overwrites the current file
+- **Save As…** — saves to `/home/arduino/ngc/` with filename prompt; `.ngc`
+  extension added automatically if omitted
+- **Reload** — discards edits and reloads from disk
+
+### grblHAL settings UI
+
+The **⚙** button (bottom-right corner) opens the grblHAL settings page at
+`/grbl-settings`. It fetches all `$$` parameters from the hardware and displays
+them in a filterable table. Each row is editable; clicking **Set** sends
+`$N=value` to grblHAL immediately.
 
 ### Additional requirements
 
@@ -350,8 +374,9 @@ Then open `http://<QRB2210-IP>:8000` in a browser.
 3. Press **Off** (= machine_on → enabled)
 4. Jog to verify tool position
 5. **Upload** or **Browse** to load an NGC file
-6. **Start** to run / **Step** for single-step execution
+6. **Start** to run / **Step** for single-step / **Pause** to feed-hold
 7. **Zero X/Y/Z** to set work origin
+8. **⚙** (bottom-right) to view/edit grblHAL parameters
 
 ### CoreXY note
 
