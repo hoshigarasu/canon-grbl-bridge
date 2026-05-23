@@ -213,6 +213,27 @@ class SerialBus:
             log.debug(f"[recv] {resp!r}")
         raise TimeoutError(f"grblHAL no response for: {sent!r}")
 
+    def send_and_collect(self, cmd: str) -> list:
+        """コマンドを送信し $始まりの複数行を収集してokを待つ（$$ 用）"""
+        with self._cmd_lock:
+            self._drain_input()
+            self.ser.write((cmd.strip() + "\n").encode())
+            lines = []
+            deadline = time.time() + SERIAL_TIMEOUT
+            while time.time() < deadline:
+                resp = self.ser.readline().decode(errors="replace").strip()
+                if not resp:
+                    continue
+                if resp == "ok":
+                    return lines
+                if resp.startswith("error") or resp.startswith("ALARM"):
+                    raise RuntimeError(resp)
+                if resp.startswith("$"):
+                    lines.append(resp)
+                else:
+                    log.debug(f"[collect] {resp!r}")
+            raise TimeoutError(f"no response for: {cmd!r}")
+
     def poll_status(self):
         """? を送信して MachineState を更新。ブロッキング（短い）。"""
         with self._cmd_lock:
@@ -1187,6 +1208,46 @@ async def telemetry(request: Request):
     return JSONResponse({"ok": True})
 
 
+
+# ── grblHAL settings UI ────────────────────────────────────────
+import pathlib as _pl2
+
+@app.get("/grbl-settings")
+async def _grbl_settings_page():
+    from fastapi.responses import HTMLResponse as _HR
+    return _HR((_pl2.Path(__file__).parent / "grbl-settings.html").read_text())
+
+@app.get("/grbl-settings-data")
+async def _grbl_settings_get():
+    if not serial_bus:
+        return JSONResponse({"ok": False, "error": "no serial"})
+    import re as _re
+    loop = asyncio.get_event_loop()
+    try:
+        lines = await loop.run_in_executor(None, serial_bus.send_and_collect, "$$")
+        settings = []
+        for ln in lines:
+            m = _re.match(r'\$(\d+)=([^\s(]+)(?:\s+\(([^)]*)\))?', ln)
+            if m:
+                settings.append({"id": int(m.group(1)), "value": m.group(2), "desc": m.group(3) or ""})
+        return JSONResponse({"ok": True, "settings": settings})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)})
+
+@app.post("/grbl-settings-data")
+async def _grbl_settings_set(request: Request):
+    body = await request.json()
+    n, v = body.get("n"), body.get("v")
+    if n is None or v is None:
+        return JSONResponse({"ok": False, "error": "missing n or v"})
+    if not serial_bus:
+        return JSONResponse({"ok": False, "error": "no serial"})
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(None, serial_bus.send_cmd, f"${n}={v}")
+        return JSONResponse({"ok": result == "ok", "result": result})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)})
 
 # ── G-code popup editor ──────────────────────────────────────────
 import pathlib as _pl

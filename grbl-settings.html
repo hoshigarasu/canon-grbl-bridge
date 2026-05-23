@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>grblHAL Settings</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:monospace;background:#1e1e2e;color:#cdd6f4;font-size:13px}
+#tb{display:flex;align-items:center;gap:10px;padding:8px 14px;background:#181825;border-bottom:1px solid #313244;flex-shrink:0}
+#tb h1{font-size:14px;font-weight:bold;color:#cba6f7}
+#search{background:#313244;border:1px solid #45475a;color:#cdd6f4;padding:4px 10px;border-radius:4px;font-family:monospace;font-size:12px;width:220px}
+.btn{padding:4px 12px;border:1px solid #45475a;background:#313244;color:#cdd6f4;cursor:pointer;border-radius:4px;font-size:12px;font-family:monospace}
+.btn:hover{background:#45475a}
+.btn.ok{background:#1e6b3a;border-color:#2ecc71;color:#fff}
+#st{font-size:12px;color:#a6adc8;margin-left:auto}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:6px 10px;background:#181825;color:#6c7086;font-weight:normal;border-bottom:1px solid #313244;position:sticky;top:0}
+td{padding:4px 10px;border-bottom:1px solid #1e1e2e;vertical-align:middle}
+tr:hover td{background:#24243e}
+tr.dirty td{background:#2a2318}
+.id-col{color:#89b4fa;width:50px}
+.val-input{background:#313244;border:1px solid #45475a;color:#f5c2e7;padding:3px 7px;border-radius:3px;font-family:monospace;font-size:13px;width:110px}
+.val-input.changed{border-color:#f5a623;color:#f5a623}
+.desc-col{color:#a6adc8;max-width:420px}
+.set-btn{padding:3px 10px;border:1px solid #45475a;background:#313244;color:#cdd6f4;cursor:pointer;border-radius:3px;font-size:12px}
+.set-btn:hover{background:#1e6b3a;border-color:#2ecc71}
+.set-btn:disabled{opacity:.4;cursor:default}
+#wrap{overflow-y:auto;height:calc(100vh - 42px)}
+.ok-flash{background:#1e6b3a!important}
+.err-flash{background:#6b1e1e!important}
+</style>
+</head>
+<body>
+<div id="tb">
+  <h1>grblHAL Settings</h1>
+  <input id="search" type="text" placeholder="Filter  $N or keyword…" oninput="filter()">
+  <button class="btn ok" onclick="loadSettings()">↺ Reload</button>
+  <span id="st">Loading…</span>
+</div>
+<div id="wrap">
+  <table id="tbl">
+    <thead><tr><th class="id-col">$N</th><th style="width:130px">Value</th><th>Description</th><th style="width:50px"></th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+<script>
+let allRows = [];
+
+function setst(msg, ok) {
+  const el = document.getElementById('st');
+  el.textContent = msg;
+  el.style.color = ok !== false ? '#a6e3a1' : '#f38ba8';
+  if (ok !== null) setTimeout(() => { if (el.textContent === msg) el.style.color = '#a6adc8'; }, 3000);
+}
+
+async function loadSettings() {
+  setst('Loading…', null);
+  try {
+    const r = await fetch('/grbl-settings-data');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'unknown');
+    allRows = data.settings;
+    render(allRows);
+    setst(`${allRows.length} settings loaded`, true);
+  } catch (e) {
+    setst('Error: ' + e.message, false);
+  }
+}
+
+function render(rows) {
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  for (const s of rows) {
+    const tr = document.createElement('tr');
+    tr.dataset.id = s.id;
+    tr.innerHTML = `
+      <td class="id-col">$${s.id}</td>
+      <td><input class="val-input" value="${s.value}" data-orig="${s.value}" oninput="markDirty(this,${s.id})"></td>
+      <td class="desc-col">${s.desc}</td>
+      <td><button class="set-btn" onclick="setSetting(${s.id}, this)">Set</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function markDirty(input, id) {
+  const changed = input.value !== input.dataset.orig;
+  input.classList.toggle('changed', changed);
+  input.closest('tr').classList.toggle('dirty', changed);
+}
+
+async function setSetting(id, btn) {
+  const input = btn.closest('tr').querySelector('.val-input');
+  const v = input.value.trim();
+  btn.disabled = true;
+  try {
+    const r = await fetch('/grbl-settings-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ n: id, v })
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || data.result);
+    input.dataset.orig = v;
+    input.classList.remove('changed');
+    input.closest('tr').classList.remove('dirty');
+    flash(input.closest('tr'), 'ok-flash');
+    setst(`$${id}=${v} set`, true);
+  } catch (e) {
+    flash(input.closest('tr'), 'err-flash');
+    setst(`Error: ${e.message}`, false);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function flash(tr, cls) {
+  tr.classList.add(cls);
+  setTimeout(() => tr.classList.remove(cls), 800);
+}
+
+function filter() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const rows = document.querySelectorAll('#tbody tr');
+  rows.forEach(tr => {
+    const text = tr.textContent.toLowerCase();
+    tr.style.display = text.includes(q) ? '' : 'none';
+  });
+}
+
+loadSettings();
+</script>
+</body>
+</html>
