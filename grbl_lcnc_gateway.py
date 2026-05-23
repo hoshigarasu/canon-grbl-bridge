@@ -1187,6 +1187,36 @@ async def telemetry(request: Request):
     return JSONResponse({"ok": True})
 
 
+
+# ── G-code popup editor ──────────────────────────────────────────
+import pathlib as _pl
+from fastapi.responses import HTMLResponse as _HtmlR
+
+_EDITOR_DIR = _pl.Path(__file__).parent
+
+@app.get("/active-file")
+async def _active_file():
+    with machine.lock:
+        f = machine.active_file
+    return JSONResponse({"path": f or ""})
+
+@app.get("/read-file")
+async def _read_file(path: str):
+    from fastapi.responses import PlainTextResponse
+    p = _pl.Path(path)
+    if not p.exists() or p.suffix.lower() not in {".ngc",".nc",".gcode",".tap",".txt"}:
+        return JSONResponse({"error":"not found"}, status_code=404)
+    return PlainTextResponse(p.read_text(errors="replace"))
+
+@app.get("/editor")
+async def _editor():
+    return _HtmlR((_EDITOR_DIR / "editor.html").read_text())
+
+@app.get("/editor-widget.js")
+async def _editor_widget():
+    from fastapi.responses import Response
+    return Response((_EDITOR_DIR / "editor-widget.js").read_text(), media_type="application/javascript")
+
 # ── 静的ファイル（lcnc-webui dist/）────────────────────────────────
 if WEBUI_DIST.exists():
     app.mount("/", StaticFiles(directory=str(WEBUI_DIST), html=True), name="webui")

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>G-code Editor</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/theme/monokai.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{display:flex;flex-direction:column;height:100vh;background:#1e1e2e;color:#cdd6f4;font-family:sans-serif}
+#tb{display:flex;align-items:center;gap:8px;padding:6px 12px;background:#181825;border-bottom:1px solid #313244;flex-shrink:0;flex-wrap:wrap}
+#tb h1{font-size:13px;color:#cdd6f4;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:100px}
+.btn{padding:4px 14px;border:1px solid #45475a;background:#313244;color:#cdd6f4;cursor:pointer;border-radius:4px;font-size:13px}
+.btn:hover{background:#45475a}
+.btn.ok{background:#1e6b3a;border-color:#2ecc71;color:#fff}.btn.ok:hover{background:#27ae60}
+.btn.sa{background:#5a3a1a;border-color:#f5a623;color:#fff}.btn.sa:hover{background:#7a5020}
+.btn.ng{background:#6b1e1e;border-color:#f38ba8;color:#fff}
+#st{font-size:12px;color:#a6adc8;min-width:80px;text-align:right}
+.CodeMirror{flex:1;height:100%;font-size:13px;line-height:1.6}
+#wrap{flex:1;overflow:hidden;display:flex;flex-direction:column}
+/* Save As ダイアログ */
+#sa-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
+#sa-overlay.show{display:flex}
+#sa-box{background:#1e1e2e;border:1px solid #45475a;border-radius:6px;padding:20px;min-width:340px;display:flex;flex-direction:column;gap:12px}
+#sa-box h2{font-size:14px;color:#cdd6f4;margin:0}
+#sa-input{background:#313244;border:1px solid #45475a;color:#cdd6f4;padding:6px 10px;border-radius:4px;font-size:13px;font-family:monospace}
+#sa-hint{font-size:11px;color:#6c7086}
+#sa-btns{display:flex;gap:8px;justify-content:flex-end}
+</style>
+</head>
+<body>
+<div id="tb">
+  <h1 id="fn">Loading…</h1>
+  <span id="st"></span>
+  <button class="btn" id="br">Reload</button>
+  <button class="btn ok" id="bs">Save (Ctrl+S)</button>
+  <button class="btn sa" id="bsa">Save As…</button>
+  <button class="btn ng" onclick="window.close()">Close</button>
+</div>
+<div id="wrap"></div>
+
+<!-- Save As ダイアログ -->
+<div id="sa-overlay">
+  <div id="sa-box">
+    <h2>名前を付けて保存</h2>
+    <input id="sa-input" type="text" placeholder="filename.ngc" spellcheck="false">
+    <div id="sa-hint">/home/arduino/ngc/</div>
+    <div id="sa-btns">
+      <button class="btn" id="sa-cancel">Cancel</button>
+      <button class="btn ok" id="sa-ok">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/codemirror.min.js"></script>
+<script>
+const SAVE_DIR = '/home/arduino/ngc';
+const params = new URLSearchParams(location.search);
+const fp = params.get('file') || '';
+
+const cm = CodeMirror(document.getElementById('wrap'), {
+  value: '',
+  lineNumbers: true,
+  theme: 'monokai',
+  indentWithTabs: false,
+  tabSize: 2,
+  autofocus: true,
+  lineWrapping: false,
+  extraKeys: { 'Ctrl-S': () => save(), 'Cmd-S': () => save() }
+});
+cm.getWrapperElement().style.height = '100%';
+
+const st = document.getElementById('st');
+const fn = document.getElementById('fn');
+
+function setst(msg, ok) {
+  st.textContent = msg;
+  st.style.color = ok ? '#a6e3a1' : '#f38ba8';
+  setTimeout(() => { if (st.textContent === msg) st.textContent = ''; }, 3000);
+}
+
+async function load() {
+  if (!fp) { fn.textContent = 'No file specified'; return; }
+  fn.textContent = fp.split('/').pop();
+  document.title = fn.textContent + ' — G-code Editor';
+  try {
+    const r = await fetch('/read-file?path=' + encodeURIComponent(fp));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    cm.setValue(await r.text());
+    cm.clearHistory();
+    setst('Loaded', true);
+  } catch (e) { setst('Error: ' + e.message, false); }
+}
+
+async function saveTo(path) {
+  const r = await fetch('/save', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, content: cm.getValue() })
+  });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+}
+
+async function save() {
+  if (!fp) { setst('No path', false); return; }
+  try { await saveTo(fp); setst('Saved ✓', true); }
+  catch (e) { setst('Save error: ' + e.message, false); }
+}
+
+// Save As
+const overlay = document.getElementById('sa-overlay');
+const saInput = document.getElementById('sa-input');
+
+document.getElementById('bsa').onclick = () => {
+  saInput.value = fp ? fp.split('/').pop() : '';
+  overlay.classList.add('show');
+  setTimeout(() => { saInput.focus(); saInput.select(); }, 50);
+};
+document.getElementById('sa-cancel').onclick = () => overlay.classList.remove('show');
+document.getElementById('sa-ok').onclick = doSaveAs;
+saInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSaveAs();
+  if (e.key === 'Escape') overlay.classList.remove('show');
+});
+
+async function doSaveAs() {
+  let name = saInput.value.trim();
+  if (!name) return;
+  if (!name.includes('.')) name += '.ngc';
+  const path = SAVE_DIR + '/' + name;
+  try {
+    await saveTo(path);
+    overlay.classList.remove('show');
+    fn.textContent = name;
+    document.title = name + ' — G-code Editor';
+    setst('Saved as ' + name, true);
+  } catch (e) { setst('Error: ' + e.message, false); }
+}
+
+document.getElementById('br').onclick = load;
+document.getElementById('bs').onclick = save;
+load();
+</script>
+</body>
+</html>
