@@ -402,3 +402,11 @@ complex canned cycles may produce many.
 | OpenOCD reset without stopping service | STM32 reset → QRB2210 shutdown |
 | Unbinding ttyHS1 | Cannot rebind without reboot |
 | Writing APB registers while halted | Silently ignored (clock gating) |
+
+### Homing note
+
+This project runs with $22=0 (homing disabled) on a CoreXY pen plotter with no limit switches.
+The gateway always reports homed: true so the UI treats the machine as permanently homed.
+Home buttons are accepted as no-ops. To enable real homing, set $22=1 in grblHAL settings
+and configure limit switch pins — the gateway will then need a home command handler that
+sends $H to grblHAL.
