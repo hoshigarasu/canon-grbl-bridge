@@ -88,6 +88,7 @@ class MachineState:
         self.grbl_state  = "Disconnected"  # Idle / Run / Hold / Alarm / ...
         self.mpos        = [0.0, 0.0, 0.0]
         self.wpos        = [0.0, 0.0, 0.0]
+        self.wco         = [0.0, 0.0, 0.0]
         self.feed        = 0.0
         self.spindle_rpm = 0.0
         # gateway 管理
@@ -122,6 +123,7 @@ class MachineState:
                 "state":            1,
                 "machine_pos":      list(self.mpos),
                 "work_pos":         list(self.wpos),
+                "eoffset_z":        0.0,
                 "joint_pos":        list(self.mpos),
                 "g5x_offset":       [0.0, 0.0, 0.0],
                 "g92_offset":       [0.0, 0.0, 0.0],
@@ -255,6 +257,7 @@ class SerialBus:
 
 
 def _parse_grbl_status(resp: str):
+    log.info(f"PARSE: {resp[:80]}")
     """
     <Idle|MPos:0.000,0.000,0.000|WPos:0.000,0.000,0.000|Bf:99,1023|F:1000|S:0>
     → MachineState 更新
@@ -283,9 +286,15 @@ def _parse_grbl_status(resp: str):
             if p.startswith("MPos:"):
                 vals = p[5:].split(",")
                 machine.mpos = [float(v) for v in vals[:3]]
+                machine.wpos = [machine.mpos[j] - machine.wco[j] for j in range(3)]
             elif p.startswith("WPos:"):
                 vals = p[5:].split(",")
                 machine.wpos = [float(v) for v in vals[:3]]
+                log.info(f"WPos→wpos: {machine.wpos}")
+            elif p.startswith("WCO:"):
+                vals = p[4:].split(",")
+                machine.wco = [float(v) for v in vals[:3]]
+                machine.wpos = [machine.mpos[i] - machine.wco[i] for i in range(3)]
             elif p.startswith("F:"):
                 sub = p[2:].split(",")
                 machine.feed = float(sub[0])
@@ -785,7 +794,20 @@ async def handle_command(ws: WebSocket, msg: dict) -> dict:
 
         if serial_bus and text:
             try:
-                await loop.run_in_executor(None, serial_bus.send_cmd, text)
+                log.info(f"MDI TX: {text!r}")
+                result = await loop.run_in_executor(None, serial_bus.send_cmd, text)
+                log.info(f"MDI RX: {result!r}")
+                # G10 L20完了後: コマンドからwpos/wcoを直接更新
+                if result == "ok" and "G10" in text and "L20" in text:
+                    with machine.lock:
+                        new_wpos = list(machine.wpos)
+                        for ax, idx in (("X",0),("Y",1),("Z",2)):
+                            m = re.search(ax + r"([-0-9.]+)", text)
+                            if m:
+                                new_wpos[idx] = float(m.group(1))
+                        machine.wpos = new_wpos
+                        machine.wco  = [machine.mpos[i] - machine.wpos[i] for i in range(3)]
+                        log.info(f"WCS zero: wpos={machine.wpos} wco={machine.wco}")
             except Exception as e:
                 return {"type": "reply", "ok": False, "error": str(e)}
         with machine.lock:
