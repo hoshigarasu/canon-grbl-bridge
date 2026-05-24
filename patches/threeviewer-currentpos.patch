@@ -1,5 +1,5 @@
 diff --git a/lcnc-webui/src/ThreeViewer.vue b/lcnc-webui/src/ThreeViewer.vue
-index 1752341..4707204 100644
+index 1752341..5348160 100644
 --- a/lcnc-webui/src/ThreeViewer.vue
 +++ b/lcnc-webui/src/ThreeViewer.vue
 @@ -284,6 +284,7 @@ let surfaceGroup: THREE.Group | null = null;
@@ -51,15 +51,19 @@ index 1752341..4707204 100644
    // ---- Backplot line (tool history in WORK coordinates) ----
  {
    backplotGeom = new THREE.BufferGeometry();
-@@ -1335,6 +1363,11 @@ function applyState(init: ViewerInit, st: ViewerState) {
+@@ -1335,6 +1363,15 @@ function applyState(init: ViewerInit, st: ViewerState) {
      pushBackplotPoint([xl.x, xl.y, xl.z]);
    }
  
-+  // ---- Current position dot (joint_pos直接使用) ----
++  // ---- Current position dot (work_pos使用、再描画強制) ----
 +  if (currentPosDot) {
-+    currentPosDot.position.set(jp[0] ?? 0, jp[1] ?? 0, jp[2] ?? 0);
++    const _wp = (st.work_pos ?? st.joint_pos) as unknown as number[];
++    const nx = _wp[0] ?? 0, ny = _wp[1] ?? 0, nz = _wp[2] ?? 0;
++    if (currentPosDot.position.x !== nx || currentPosDot.position.y !== ny || currentPosDot.position.z !== nz) {
++      currentPosDot.position.set(nx, ny, nz);
++      _needsRender = true;
++    }
 +  }
-+
    // ---- Highlight current motion line in toolpath ----
    // motion_line can be ~1 line ahead during G64 blending; try previous line first
    if (highlightLine && curLine != null) {

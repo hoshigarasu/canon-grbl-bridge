@@ -1,5 +1,6 @@
 #!/bin/bash
 # PC (Git Bash) から実行する lcnc-webui ビルド & 転送スクリプト
+export PATH="/c/Program Files/nodejs:$PATH"
 # UNO Qよりも約10倍速くビルドできる
 set -e
 
