@@ -1,0 +1,65 @@
+diff --git a/lcnc-webui/src/ThreeViewer.vue b/lcnc-webui/src/ThreeViewer.vue
+index 1752341..4707204 100644
+--- a/lcnc-webui/src/ThreeViewer.vue
++++ b/lcnc-webui/src/ThreeViewer.vue
+@@ -284,6 +284,7 @@ let surfaceGroup: THREE.Group | null = null;
+ 
+ // Map g-code line number → { start, end } point-index range in feed arrays
+ let feedLineMap: Map<number, { start: number; end: number }> = new Map();
++let currentPosDot: THREE.Group | null = null;
+ 
+ // Pending layer visibility: stores calls made before scene objects exist
+ let pendingLayers: Map<Layer, boolean> | null = new Map();
+@@ -680,6 +681,7 @@ function setLayerVisible(layer: Layer, on: boolean) {
+       break;
+     case "tool":
+       if (toolMarker) toolMarker.visible = on;
++      if (currentPosDot) currentPosDot.visible = on;
+       break;
+     case "workzero":
+       if (workAxes) workAxes.visible = on;
+@@ -976,6 +978,32 @@ function ensureCoreGroups(init: ViewerInit) {
+ 
+   workRotGroup.add(workAxes);
+ 
++  // ---- Current position crosshair ----
++  {
++    const _cg = new THREE.Group();
++    const _r = 4 * _unitScale;
++    const _sphere = new THREE.Mesh(
++      new THREE.SphereGeometry(_r, 16, 16),
++      new THREE.MeshBasicMaterial({ color: 0x00ff88, depthTest: false, depthWrite: false })
++    );
++    _sphere.renderOrder = 20;
++    _cg.add(_sphere);
++    const _cs = _r * 5;
++    const _crossGeom = new THREE.BufferGeometry();
++    _crossGeom.setAttribute('position', new THREE.Float32BufferAttribute([
++      -_cs, 0, 0,  _cs, 0, 0,
++       0, -_cs, 0,  0, _cs, 0,
++       0, 0, -_cs,  0, 0, _cs,
++    ], 3));
++    const _cross = new THREE.LineSegments(_crossGeom,
++      new THREE.LineBasicMaterial({ color: 0x00ff88, depthTest: false, depthWrite: false })
++    );
++    _cross.renderOrder = 20;
++    _cg.add(_cross);
++    _workGrp!.add(_cg);
++    currentPosDot = _cg;
++  }
++
+   // ---- Backplot line (tool history in WORK coordinates) ----
+ {
+   backplotGeom = new THREE.BufferGeometry();
+@@ -1335,6 +1363,11 @@ function applyState(init: ViewerInit, st: ViewerState) {
+     pushBackplotPoint([xl.x, xl.y, xl.z]);
+   }
+ 
++  // ---- Current position dot (joint_pos直接使用) ----
++  if (currentPosDot) {
++    currentPosDot.position.set(jp[0] ?? 0, jp[1] ?? 0, jp[2] ?? 0);
++  }
++
+   // ---- Highlight current motion line in toolpath ----
+   // motion_line can be ~1 line ahead during G64 blending; try previous line first
+   if (highlightLine && curLine != null) {
