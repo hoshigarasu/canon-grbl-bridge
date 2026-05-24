@@ -257,7 +257,6 @@ class SerialBus:
 
 
 def _parse_grbl_status(resp: str):
-    log.info(f"PARSE: {resp[:80]}")
     """
     <Idle|MPos:0.000,0.000,0.000|WPos:0.000,0.000,0.000|Bf:99,1023|F:1000|S:0>
     → MachineState 更新
@@ -794,9 +793,7 @@ async def handle_command(ws: WebSocket, msg: dict) -> dict:
 
         if serial_bus and text:
             try:
-                log.info(f"MDI TX: {text!r}")
                 result = await loop.run_in_executor(None, serial_bus.send_cmd, text)
-                log.info(f"MDI RX: {result!r}")
                 # G10 L20完了後: コマンドからwpos/wcoを直接更新
                 if result == "ok" and "G10" in text and "L20" in text:
                     with machine.lock:
@@ -1274,6 +1271,90 @@ async def _grbl_settings_set(request: Request):
         return JSONResponse({"ok": result == "ok", "result": result})
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)})
+
+
+# ── 推定加工時間 ─────────────────────────────────────────────────
+def _estimate_time(commands: list, rapid_mm_min: float = 3000.0) -> float:
+    """コマンドリストから推定加工時間（秒）を計算する。"""
+    import math, re
+    pos  = [0.0, 0.0, 0.0]
+    feed = 1000.0
+    total = 0.0
+    tok = re.compile(r'([XYZIJFP])([-\d.]+)', re.I)
+
+    for cmd in commands:
+        if not cmd:
+            continue
+        t = {m.group(1).upper(): float(m.group(2)) for m in tok.finditer(cmd)}
+        cu = cmd.upper()
+        if 'F' in t:
+            feed = t['F']
+
+        if re.search(r'\bG0?0\b', cu):           # G0 / G00 rapid
+            tgt = [t.get('X', pos[0]), t.get('Y', pos[1]), t.get('Z', pos[2])]
+            d = math.sqrt(sum((tgt[i]-pos[i])**2 for i in range(3)))
+            if d > 0 and rapid_mm_min > 0:
+                total += d / rapid_mm_min * 60
+            pos = tgt
+
+        elif re.search(r'\bG0?1\b', cu):          # G1 feed
+            tgt = [t.get('X', pos[0]), t.get('Y', pos[1]), t.get('Z', pos[2])]
+            d = math.sqrt(sum((tgt[i]-pos[i])**2 for i in range(3)))
+            if d > 0 and feed > 0:
+                total += d / feed * 60
+            pos = tgt
+
+        elif re.search(r'\bG0?[23]\b', cu):       # G2/G3 arc
+            cw  = bool(re.search(r'\bG0?2\b', cu))
+            tx  = t.get('X', pos[0]); ty = t.get('Y', pos[1]); tz = t.get('Z', pos[2])
+            ci  = t.get('I', 0.0);   cj = t.get('J', 0.0)
+            cx  = pos[0] + ci;       cy = pos[1] + cj
+            r   = math.hypot(ci, cj)
+            if r > 1e-9:
+                a0 = math.atan2(pos[1] - cy, pos[0] - cx)
+                a1 = math.atan2(ty - cy,     tx - cx)
+                if cw:
+                    if a1 >= a0: a1 -= 2 * math.pi
+                else:
+                    if a1 <= a0: a1 += 2 * math.pi
+                arc_len = r * abs(a1 - a0)
+                dz  = abs(tz - pos[2])
+                dist = math.sqrt(arc_len**2 + dz**2)
+                if feed > 0:
+                    total += dist / feed * 60
+            pos = [tx, ty, tz]
+
+        elif re.search(r'\bG0?4\b', cu):          # G4 dwell (ms in grblHAL)
+            total += t.get('P', 0) / 1000.0
+
+    return total
+
+@app.get("/estimate-time")
+async def estimate_time_ep(path: str = ""):
+    import pathlib as _pl
+    if not path:
+        with machine.lock:
+            path = machine.active_file or ""
+    if not path or not _pl.Path(path).exists():
+        return JSONResponse({"ok": False, "error": "no file"})
+    try:
+        _loop = asyncio.get_event_loop()
+        cmds = await _loop.run_in_executor(None, extract_commands, path)
+        secs = _estimate_time(cmds)
+        m, s = divmod(int(secs), 60)
+        return JSONResponse({"ok": True, "seconds": round(secs),
+                             "formatted": f"{m}m {s:02d}s"})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)})
+
+
+@app.get("/status-summary")
+async def _status_summary():
+    with machine.lock:
+        return JSONResponse({
+            "active_file":  machine.active_file or "",
+            "interp_state": machine.interp_state,
+        })
 
 # ── G-code popup editor ──────────────────────────────────────────
 import pathlib as _pl
