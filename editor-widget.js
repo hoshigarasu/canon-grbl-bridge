@@ -16,7 +16,7 @@
     const btn = e.target.closest('button');
     if (!btn) return;
     if (btn.textContent.trim() !== 'Edit') return;
-    e.stopPropagation();
+    e.stopImmediatePropagation();
     openEditor();
   }, true);
 

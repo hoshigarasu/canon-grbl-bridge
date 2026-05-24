@@ -17,6 +17,15 @@ git -C "${LCNC_SUITE_DIR}" pull
 COMMIT=$(git -C "${LCNC_SUITE_DIR}" rev-parse --short HEAD)
 info "lcnc-suite: ${COMMIT}"
 
+step "ThreeViewer パッチ適用"
+if grep -q 'currentPosDot' "${LCNC_SUITE_DIR}/lcnc-webui/src/ThreeViewer.vue"; then
+    info "ThreeViewer パッチ適用済み"
+else
+    node "${BRIDGE_DIR}/patches/patch_threeviewer.mjs" \
+        "${LCNC_SUITE_DIR}/lcnc-webui/src/ThreeViewer.vue" && \
+        info "ThreeViewer パッチ適用完了" || error "ThreeViewer パッチ失敗"
+fi
+
 step "lcnc-webui ビルド"
 cd "${LCNC_SUITE_DIR}/lcnc-webui"
 npm install
@@ -26,6 +35,16 @@ step "dist を canon-grbl-bridge に反映"
 rm -rf "${DIST_DST}"
 mkdir -p "$(dirname "${DIST_DST}")"
 cp -r "${LCNC_SUITE_DIR}/lcnc-webui/dist" "${DIST_DST}"
+
+step "editor-widget.js 注入"
+INDEX="${DIST_DST}/index.html"
+if grep -q 'editor-widget' "${INDEX}"; then
+    info "editor-widget.js 注入済み"
+else
+    sed -i 's|</body>|<script src="/editor-widget.js" defer></script>
+  </body>|' "${INDEX}"
+    info "editor-widget.js 注入完了"
+fi
 
 step "コミット＆プッシュ"
 cd "${BRIDGE_DIR}"
