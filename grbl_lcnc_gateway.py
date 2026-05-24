@@ -210,6 +210,9 @@ class SerialBus:
                 return resp
             if resp == "ok":
                 return "ok"
+            if resp.startswith("<") and resp.endswith(">"):
+                _parse_grbl_status(resp)
+                continue
             log.debug(f"[recv] {resp!r}")
         raise TimeoutError(f"grblHAL no response for: {sent!r}")
 
@@ -235,15 +238,16 @@ class SerialBus:
             raise TimeoutError(f"no response for: {cmd!r}")
 
     def poll_status(self):
-        """? を送信して MachineState を更新。ブロッキング（短い）。"""
-        with self._cmd_lock:
-            self.ser.write(b"?")
-            deadline = time.time() + 0.3
-            while time.time() < deadline:
-                resp = self.ser.readline().decode(errors="replace").strip()
-                if resp.startswith("<") and resp.endswith(">"):
-                    _parse_grbl_status(resp)
-                    return
+        """? をRTコマンドとして送信（ロック不要）。レスポンスはロック空き時のみ直接読む。"""
+        self.ser.write(b"?")
+        if not self._cmd_lock.locked():
+            with self._cmd_lock:
+                deadline = time.time() + 0.3
+                while time.time() < deadline:
+                    resp = self.ser.readline().decode(errors="replace").strip()
+                    if resp.startswith("<") and resp.endswith(">"):
+                        _parse_grbl_status(resp)
+                        return
 
     def close(self):
         if self.ser.is_open:
@@ -1016,9 +1020,9 @@ async def lifespan(app: FastAPI):
             },
             "groups":     [],
             "parts":      [],
-            "kinematics": [],
-            "workGroup":  None,
-            "toolGroup":  None,
+            "kinematics": [{"group": "tool", "joint": 0, "type": "translate", "direction": "x", "sign": 1}, {"group": "tool", "joint": 1, "type": "translate", "direction": "y", "sign": 1}, {"group": "tool", "joint": 2, "type": "translate", "direction": "z", "sign": 1}],
+            "workGroup":  "root",
+            "toolGroup":  "tool",
         },
     }
 
@@ -1054,8 +1058,8 @@ async def ws_endpoint(ws: WebSocket):
             "axes": ["X", "Y", "Z"],
             "stl_base_url": "",
             "machine_bounds": {"origin": [0, 0, 0], "size": [200, 200, 200]},
-            "groups": [], "parts": [], "kinematics": [],
-            "workGroup": None, "toolGroup": None,
+            "groups": [{"id": "tool", "parent": "root"}], "parts": [], "kinematics": [{"group": "tool", "joint": 0, "type": "translate", "direction": "x", "sign": 1}, {"group": "tool", "joint": 1, "type": "translate", "direction": "y", "sign": 1}, {"group": "tool", "joint": 2, "type": "translate", "direction": "z", "sign": 1}],
+            "workGroup": "root", "toolGroup": "tool",
         },
     }))
 
