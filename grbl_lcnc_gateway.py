@@ -56,7 +56,7 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────
 DEFAULT_PORT    = "/dev/ttyHS1"
 DEFAULT_BAUD    = 115200
-SERIAL_TIMEOUT  = 10
+SERIAL_TIMEOUT  = 120
 STATUS_POLL_HZ  = 30          # status push レート
 POLL_INTERVAL   = 1.0 / STATUS_POLL_HZ
 GRBL_POLL_MS    = 100         # ? コマンド送信間隔 (ms)
@@ -432,7 +432,7 @@ class GrblBridge(Translated, StatMixin):
         self.feed_rate = rate * MM_PER_INCH
 
     def dwell(self, seconds):
-        self._send(f"G4 P{int(seconds * 1000)}")
+        self._send(f"G4 P{seconds:.3f}")
 
     def spindle_on(self, speed, *args):
         self._send(f"M3 S{speed:.0f}")
