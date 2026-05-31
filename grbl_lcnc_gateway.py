@@ -104,6 +104,7 @@ class MachineState:
         self.spindle_direction = 0
         self.probe_tripped = False
         self.wcs_p       = 1  # 現在のWCS: G54=1, G55=2, ..., G59=6
+        self.last_error: Optional[dict] = None  # 最後のgrblHAL拒否（error/ALARM/timeout）
         # ステップ実行用
         self.step_commands: list[str] = []
         self.step_index: int = 0
@@ -147,6 +148,7 @@ class MachineState:
                 "probe_tripped":     self.probe_tripped,
                 "probing":           False,
                 "probed_position":   [0.0, 0.0, 0.0],
+                "last_error":        self.last_error,
             }
 
 machine = MachineState()
@@ -206,9 +208,11 @@ class SerialBus:
                 with machine.lock:
                     machine.grbl_state = "Alarm"
                     machine.estop = True
+                notify_error("alarm", f"grblHAL {resp}", sent=sent, code=resp)
                 return resp
             if resp.startswith("error"):
                 log.warning(f"grblHAL error: {resp!r} (sent: {sent!r})")
+                notify_error("error", f"grblHAL {resp}", sent=sent, code=resp)
                 return resp
             if resp == "ok":
                 return "ok"
@@ -323,6 +327,36 @@ def _parse_grbl_status(resp: str):
 
 
 serial_bus: Optional[SerialBus] = None  # startup で初期化
+_event_loop: Optional["asyncio.AbstractEventLoop"] = None  # startup でキャプチャ
+
+
+def notify_error(severity: str, message: str, sent: str = "", code: Optional[str] = None):
+    """
+    grblHAL の拒否や run 失敗を WebSocket クライアント全員に通知する。
+    machine.last_error にも保存するので、後から接続したクライアントも見える。
+    どのスレッドからでも呼べる（asyncio.run_coroutine_threadsafe 経由）。
+
+    severity: "error" | "alarm" | "timeout" | "abort" | "run_failed"
+    code:     grblHAL の応答そのまま（例 "error:33", "ALARM:9"）
+    """
+    err = {
+        "ts":       time.time(),
+        "severity": severity,
+        "message":  message,
+        "sent":     sent,
+        "code":     code,
+    }
+    with machine.lock:
+        machine.last_error = err
+    log.info(f"notify_error: {severity} {message!r} sent={sent!r}")
+    if _event_loop is not None and _event_loop.is_running():
+        try:
+            asyncio.run_coroutine_threadsafe(
+                clients.broadcast({"type": "notification", "data": err}),
+                _event_loop
+            )
+        except Exception as e:
+            log.warning(f"notify_error broadcast failed: {e}")
 
 # ─────────────────────────────────────────────────────────────────────
 # rs274ngc bridge（GrblBridge）
@@ -366,7 +400,12 @@ class GrblBridge(Translated, StatMixin):
             return
         if self.dry_run:
             return
-        serial_bus.send_cmd(cmd)
+        result = serial_bus.send_cmd(cmd)
+        if result != "ok":
+            # _wait_ok が既に notify_error で原因を通知している。
+            # ここで raise することで、ALARM 状態の grblHAL に後続コマンドを
+            # 投げ続ける（全部 error:9 で弾かれる）状態を防ぐ。
+            raise RuntimeError(f"grblHAL rejected: {result} (sent: {cmd})")
 
     def _update_pos(self, x, y, z):
         self.current_x, self.current_y, self.current_z = x, y, z
@@ -673,6 +712,17 @@ async def handle_command(ws: WebSocket, msg: dict) -> dict:
             await loop.run_in_executor(None, serial_bus.send_cmd, "$X")
         with machine.lock:
             machine.estop = False
+            machine.last_error = None
+        return {"type": "reply", "ok": True}
+
+    if cmd == "clear_error":
+        with machine.lock:
+            machine.last_error = None
+        # 全クライアントに「クリアされた」ことを即座に通知
+        try:
+            await clients.broadcast({"type": "notification", "data": None})
+        except Exception as e:
+            log.warning(f"clear_error broadcast failed: {e}")
         return {"type": "reply", "ok": True}
 
     # ── プログラム実行 ────────────────────────────────────────────
@@ -690,6 +740,10 @@ async def handle_command(ws: WebSocket, msg: dict) -> dict:
                 machine.task_mode    = TASK_MODE_MANUAL
             if not success:
                 log.warning(f"auto_run failed: {error}")
+                # _wait_ok が原因の通知を既に出している可能性が高いが、
+                # 「Run が異常終了した」というイベント自体も通知する。
+                # WebUI 側はこれを使ってプログラム停止表示できる。
+                notify_error("run_failed", f"Run aborted: {error}")
 
         with machine.lock:
             machine.interp_state = INTERP_READING
@@ -987,7 +1041,8 @@ async def _send_viewer_gcode(ngc_path: str):
 # ─────────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global serial_bus
+    global serial_bus, _event_loop
+    _event_loop = asyncio.get_running_loop()
     NGC_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     # GPIO70（レベルシフタ Enable）をgpiod 2.x経由で保持
