@@ -78,28 +78,85 @@ python3 -c "import rs274, gcode, linuxcnc; print('OK')"
 ### grblHAL firmware
 
 [grblHAL-STM32U585](https://github.com/hoshigarasu/grblHAL-STM32U585) running on the
-STM32U585, reachable via `/dev/ttyHS1` at 115200 baud.
+STM32U585, reachable via `/dev/ttyHS1` at 115200 baud. Flash it from the UNO Q with
+`./install.sh --flash-firmware` — see [Firmware flashing](#firmware-flashing-swd).
 
 ---
 
 ## Installation
 
-### One-line installer (fresh Arduino UNO Q)
+The Arduino UNO Q ships with factory firmware (Zephyr + RouterBridge) on its
+STM32U585. To run this project you flash **grblHAL** onto the STM32 and install
+the bridge + WebUI on the QRB2210 Linux side — `install.sh` does both.
 
-Run this on a factory-fresh Arduino UNO Q (Debian 13 trixie / aarch64):
+### First install (factory-fresh Arduino UNO Q)
+
+Debian 13 trixie / aarch64, as the `arduino` user:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hoshigarasu/canon-grbl-bridge/main/install.sh | bash
+git clone https://github.com/hoshigarasu/canon-grbl-bridge.git
+cd canon-grbl-bridge
+./install.sh --flash-firmware
 ```
 
-The installer will:
-1. Install all system dependencies (linuxcnc-uspace, nodejs, npm, gpiod, …)
-2. Install Python packages (FastAPI, uvicorn, gpiod, …)
-3. Clone this repository
-4. Create persistent data directories
-5. Register and start the systemd service
+`--flash-firmware` writes the bundled grblHAL image (`firmware/grblHAL_UNO_Q.elf`)
+to the STM32U585 over SWD using the UNO Q's on-board OpenOCD. When it finishes it
+asks you to **power-cycle the board once** — grblHAL only starts cleanly after a
+power-on reset (see [Firmware flashing](#firmware-flashing-swd)). After the power
+cycle the gateway service starts automatically; open `http://<UNO-Q-IP>:8000`.
 
-Once complete, open `http://<UNO-Q IP>:8000` in a browser.
+The installer:
+1. Installs system dependencies (linuxcnc-uspace, nodejs, npm, gpiod, …)
+2. Installs Python packages (FastAPI, uvicorn, python-multipart, gpiod)
+3. Clones / updates this repository
+4. Creates persistent data directories (`~/ngc`, `~/.config/lcnc_gateway`)
+5. **Disables `arduino-router`** — it claims `ttyHS1` with the RouterBridge
+   protocol and conflicts with the grbl protocol (looks connected but won't move)
+6. Registers and enables the `grbl-lcnc-gateway` systemd service
+7. With `--flash-firmware`: flashes grblHAL over SWD, then prompts for a power cycle
+
+### Software updates (no re-flash, no power cycle)
+
+To update the bridge / gateway / WebUI without touching the STM32 firmware, run
+the installer **without** the flag:
+
+```bash
+cd canon-grbl-bridge && git pull
+./install.sh
+```
+
+Dependencies are reinstalled idempotently and the gateway is restarted; the STM32
+is left untouched, so no power cycle is needed. The `--flash-firmware` step is
+only for first install or an actual firmware change — and re-flashing always
+needs one power cycle afterward.
+
+### Firmware flashing (SWD)
+
+grblHAL is flashed onto the STM32U585 from the QRB2210 itself — no external
+programmer. The UNO Q carries an on-board OpenOCD (`/opt/openocd`) wired to the
+STM32 SWD pins (gpiochip1: SWCLK=26, SWDIO=25, NRST=38). `--flash-firmware` runs:
+
+```bash
+sudo systemctl stop grbl-lcnc-gateway          # release ttyHS1
+sudo /opt/openocd/bin/openocd \
+  -s /opt/openocd -s /opt/openocd/share/openocd/scripts \
+  -f /opt/openocd/openocd_gpiod.cfg \
+  -c "init" -c "reset halt" \
+  -c "flash write_image erase firmware/grblHAL_UNO_Q.elf" \
+  -c "verify_image firmware/grblHAL_UNO_Q.elf" \
+  -c "shutdown"
+```
+
+The committed `firmware/grblHAL_UNO_Q.elf` is the authoritative image (a CubeIDE
+build; the file is large because it carries debug symbols, but OpenOCD writes
+only the ~300 KB of loadable sections).
+
+**Why a power cycle is required:** after `reset halt` the STM32U585 boot ROM (RSS)
+is interrupted, and an OpenOCD warm reset (`reset run`) does not bring grblHAL
+back — the CPU stays parked in the RSS and `ttyHS1` goes silent. The debug power
+domain is cleared only by a power-on reset, so one physical power cycle is needed
+after flashing. It is a one-time step per firmware write; software updates never
+touch the STM32 and need no power cycle.
 
 ### Manual installation
 
@@ -134,12 +191,15 @@ Example output:
 
 ### Real execution
 
-```bash
-# Stop arduino-router and enable level shifter first
-ssh -t uno-q 'sudo systemctl stop arduino-router.service && \
-  sudo gpioset -c /dev/gpiochip1 -t0 70=1'
+The installer permanently disables `arduino-router`, so `ttyHS1` is free for the
+bridge. If you run the **gateway** (`grbl-lcnc-gateway`), it manages the level
+shifter (GPIO70) automatically — nothing else to do.
 
-# Run
+To run the **CLI bridge directly** (gateway stopped), enable the level shifter
+first, then run:
+
+```bash
+ssh -t uno-q 'sudo systemctl stop grbl-lcnc-gateway; sudo gpioset -c /dev/gpiochip1 70=1 &'
 sudo python3 rs274ngc_grbl_bridge.py path/to/program.ngc
 ```
 
@@ -333,10 +393,10 @@ pip3 install fastapi uvicorn python-multipart gpiod --break-system-packages
 ### Updating the WebUI
 
 The pre-built `lcnc-webui/dist/` is included in this repository. To rebuild
-from the latest [lcnc-suite](https://github.com/bildobodo/lcnc-suite) source:
+from the latest [lcnc-suite](https://github.com/hoshigarasu/lcnc-suite) source:
 
 ```bash
-git clone https://github.com/bildobodo/lcnc-suite.git
+git clone https://github.com/hoshigarasu/lcnc-suite.git
 cd lcnc-suite/lcnc-webui
 npm install
 npm run build
@@ -402,6 +462,11 @@ complex canned cycles may produce many.
 | OpenOCD reset without stopping service | STM32 reset → QRB2210 shutdown |
 | Unbinding ttyHS1 | Cannot rebind without reboot |
 | Writing APB registers while halted | Silently ignored (clock gating) |
+
+> Firmware flashing is handled safely by `./install.sh --flash-firmware`, which
+> stops the gateway first and uses the verified SWD sequence above. Flash this
+> way rather than poking GPIO/OpenOCD by hand. See
+> [Firmware flashing](#firmware-flashing-swd).
 
 ### Homing note
 
