@@ -17,6 +17,14 @@ warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 step()  { echo -e "\n${CYAN}=== $* ===${NC}"; }
 
+# LAN IP（docker0 等の内部 IF ではなく、外向きルートの送信元アドレス）
+lan_ip() {
+    local ip
+    ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')
+    [ -z "$ip" ] && ip=$(hostname -I | awk '{print $1}')
+    echo "$ip"
+}
+
 # --- 引数解析 -----------------------------------------------------------------
 FLASH_FW=0
 for arg in "$@"; do
@@ -109,7 +117,7 @@ sudo apt-get install -y \
     git \
     python3 \
     python3-pip \
-    python3-gpiod \
+    gpiod \
     nodejs \
     npm
 
@@ -181,7 +189,7 @@ if [[ "${FLASH_FW}" == "1" ]]; then
     echo -e "     grblHAL の起動には電源サイクル1回が必要です。"
     echo -e "     再投入後、gateway は自動起動します。"
     echo ""
-    IP=$(hostname -I | awk '{print $1}')
+    IP=$(lan_ip)
     echo -e "  電源再投入後アクセス: ${CYAN}http://${IP}:8000${NC}"
     echo ""
     exit 0
@@ -207,7 +215,7 @@ echo -e "${GREEN}  インストール完了${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
 echo -e "  ブラウザでアクセス:"
-IP=$(hostname -I | awk '{print $1}')
+IP=$(lan_ip)
 echo -e "  ${CYAN}http://${IP}:8000${NC}"
 echo ""
 echo -e "  ログ確認:"
