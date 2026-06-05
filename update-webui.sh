@@ -41,8 +41,7 @@ INDEX="${DIST_DST}/index.html"
 if grep -q 'editor-widget' "${INDEX}"; then
     info "editor-widget.js 注入済み"
 else
-    sed -i 's|</body>|<script src="/editor-widget.js" defer></script>
-  </body>|' "${INDEX}"
+    sed -i 's#</body>#<script src="/editor-widget.js" defer></script></body>#' "${INDEX}"
     info "editor-widget.js 注入完了"
 fi
 
