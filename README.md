@@ -171,51 +171,32 @@ No build step for the bridge itself. The WebUI dist is included in the repositor
 
 ## Usage
 
-### Dry-run (no hardware needed)
+### WebUI (normal operation)
 
-Parses the G-code file and prints the grblHAL commands that would be sent:
-
-```bash
-python3 rs274ngc_grbl_bridge.py --dry-run path/to/program.ngc
-```
-
-Example output:
-
-```
-[DRY] G17
-[DRY] G0 X1.5000 Y0.0000 Z0.0000
-[DRY] G1 X0.7500 Y1.2990 Z-0.4000 F100.00
-[DRY] G2 X1.6133 Y-1.1787 Z-0.1000 I-1.7127 J1.0288 F24.00
-...
-```
-
-### Real execution
+Open `http://<uno-q-ip>:8000` in a browser. Upload an `.ngc` file, preview the
+toolpath in 3D, and run. Mobile layout is available at `http://<uno-q-ip>:8000/?mobile`.
 
 The installer permanently disables `arduino-router`, so `ttyHS1` is free for the
-bridge. If you run the **gateway** (`grbl-lcnc-gateway`), it manages the level
+gateway. The gateway (`grbl-lcnc-gateway` systemd service) manages the level
 shifter (GPIO70) automatically — nothing else to do.
 
-To run the **CLI bridge directly** (gateway stopped), enable the level shifter
-first, then run:
+### Smoke test
+
+Verifies service, HTTP, WebSocket, grblHAL serial round-trip, and toolpath
+parsing without moving the machine:
 
 ```bash
-ssh -t uno-q 'sudo systemctl stop grbl-lcnc-gateway; sudo gpioset -c /dev/gpiochip1 70=1 &'
-sudo python3 rs274ngc_grbl_bridge.py path/to/program.ngc
+./smoke_test.sh                # no motion
+./smoke_test.sh --with-motion  # adds a ±0.1 mm X jog
 ```
 
-### Options
+### WebUI deployment scripts
 
-```
-usage: rs274ngc_grbl_bridge.py [-h] [--port PORT] [--baud BAUD] [--dry-run] gcode_file
-
-positional arguments:
-  gcode_file    G-code file to execute (.ngc)
-
-options:
-  --port PORT   Serial port (default: /dev/ttyHS1)
-  --baud BAUD   Baud rate   (default: 115200)
-  --dry-run     Print commands without sending to hardware
-```
+| Script | Runs on | Builds on | Use case |
+|---|---|---|---|
+| `deploy-webui.sh` | PC | UNO Q | Normal: push lcnc-suite, build & deploy on the box |
+| `update-webui.sh` | UNO Q | UNO Q | Box-internal build + dist commit (called by deploy-webui.sh) |
+| `update-webui-pc.sh` | PC | PC | Fallback for 2 GB boards where on-board npm build hits OOM |
 
 ---
 

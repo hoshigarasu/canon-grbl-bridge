@@ -40,11 +40,18 @@ else
     ng "service not active"; exit 1
 fi
 
-# --- 2. HTTP 応答 --------------------------------------------------------------
-if curl -sf -o /dev/null --max-time 5 "${BASE}/files"; then
+# --- 2. HTTP 応答 (再起動直後はlisten開始まで待つ: 最大15秒) ------------------
+HTTP_OK=0
+for i in $(seq 1 15); do
+    if curl -sf -o /dev/null --max-time 2 "${BASE}/files"; then
+        HTTP_OK=1; break
+    fi
+    sleep 1
+done
+if [[ $HTTP_OK -eq 1 ]]; then
     ok "HTTP /files responds"
 else
-    ng "HTTP /files no response"; exit 1
+    ng "HTTP /files no response (15s timeout)"; exit 1
 fi
 
 # --- 5. grblHAL シリアル往復 ($$ 取得) -----------------------------------------

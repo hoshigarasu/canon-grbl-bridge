@@ -17,15 +17,6 @@ git -C "${LCNC_SUITE_DIR}" pull
 COMMIT=$(git -C "${LCNC_SUITE_DIR}" rev-parse --short HEAD)
 info "lcnc-suite: ${COMMIT}"
 
-step "ThreeViewer パッチ適用"
-if grep -q 'currentPosDot' "${LCNC_SUITE_DIR}/lcnc-webui/src/ThreeViewer.vue"; then
-    info "ThreeViewer パッチ適用済み"
-else
-    node "${BRIDGE_DIR}/patches/patch_threeviewer.mjs" \
-        "${LCNC_SUITE_DIR}/lcnc-webui/src/ThreeViewer.vue" && \
-        info "ThreeViewer パッチ適用完了" || error "ThreeViewer パッチ失敗"
-fi
-
 step "lcnc-webui ビルド"
 cd "${LCNC_SUITE_DIR}/lcnc-webui"
 npm install

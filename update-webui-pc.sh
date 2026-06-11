@@ -1,5 +1,7 @@
 #!/bin/bash
 # PC (Git Bash) から実行する lcnc-webui ビルド & 転送スクリプト
+# 用途: UNO Q 2GB版でボードサイドビルド (update-webui.sh) がOOMで厳しい場合の
+#       フォールバック。通常は deploy-webui.sh (box側ビルド) を使う。
 export PATH="/c/Program Files/nodejs:$PATH"
 # UNO Qよりも約10倍速くビルドできる
 set -e
@@ -9,8 +11,8 @@ info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 step()  { echo -e "\n${CYAN}=== $* ===${NC}"; }
 
-LCNC_DIR="$HOME/Documents/cnc/lcnc-suite"
-BRIDGE_DIR="$HOME/Documents/cnc/canon-grbl-bridge"
+LCNC_DIR="/c/Tools/lcnc-suite"
+BRIDGE_DIR="/c/Tools/canon-grbl-bridge"
 UNO_Q="uno-q"
 REMOTE_BRIDGE="/home/arduino/canon-grbl-bridge"
 
@@ -28,18 +30,6 @@ step "lcnc-suite を最新に更新"
 git -C "$LCNC_DIR" pull
 COMMIT=$(git -C "$LCNC_DIR" rev-parse --short HEAD)
 info "lcnc-suite: $COMMIT"
-
-step "ThreeViewer パッチ適用"
-VUE="$LCNC_DIR/lcnc-webui/src/ThreeViewer.vue"
-MJS="$BRIDGE_DIR/patches/patch_threeviewer.mjs"
-if grep -q 'currentPosDot' "$VUE"; then
-    info "ThreeViewer パッチ適用済み"
-elif [[ -f "$MJS" ]]; then
-    node "$MJS" "$VUE" && info "ThreeViewer パッチ適用完了" \
-        || error "ThreeViewer パッチ失敗"
-else
-    error "パッチスクリプトが見つかりません: $MJS"
-fi
 
 step "lcnc-webui ビルド (PC)"
 cd "$LCNC_DIR/lcnc-webui"

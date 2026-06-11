@@ -42,6 +42,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, H
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("gateway")
+
 # rs274ngc (linuxcnc-uspace パッケージ)
 try:
     import gcode
@@ -73,9 +76,6 @@ INTERP_WAITING  = 4
 TASK_MODE_MANUAL = 1
 TASK_MODE_AUTO   = 2
 TASK_MODE_MDI    = 3
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger("gateway")
 
 # ─────────────────────────────────────────────────────────────────────
 # グローバル状態
