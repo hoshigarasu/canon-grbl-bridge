@@ -201,7 +201,10 @@ class SerialBus:
             if not resp:
                 continue
             if resp.startswith("["):
-                log.debug(f"[grbl msg] {resp}")
+                if resp.startswith("[MSG:"):
+                    notify_msg(resp[5:].rstrip("]"))
+                else:
+                    log.debug(f"[grbl msg] {resp}")
                 continue
             if resp.startswith("ALARM"):
                 log.warning(f"grblHAL ALARM: {resp!r} (sent: {sent!r})")
@@ -357,6 +360,21 @@ def notify_error(severity: str, message: str, sent: str = "", code: Optional[str
             )
         except Exception as e:
             log.warning(f"notify_error broadcast failed: {e}")
+
+def notify_msg(text: str):
+    """
+    grblHAL の [MSG:...] をWebSocketクライアントに転送する。
+    どのスレッドからでも呼べる（asyncio.run_coroutine_threadsafe 経由）。
+    """
+    log.info(f"grbl msg: {text!r}")
+    if _event_loop is not None and _event_loop.is_running():
+        try:
+            asyncio.run_coroutine_threadsafe(
+                clients.broadcast({"type": "grbl_msg", "data": {"text": text}}),
+                _event_loop
+            )
+        except Exception as e:
+            log.warning(f"notify_msg broadcast failed: {e}")
 
 # ─────────────────────────────────────────────────────────────────────
 # rs274ngc bridge（GrblBridge）
