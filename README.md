@@ -198,6 +198,26 @@ parsing without moving the machine:
 | `update-webui.sh` | UNO Q | UNO Q | Box-internal build + dist commit (called by deploy-webui.sh) |
 | `update-webui-pc.sh` | PC | PC | Fallback for 2 GB boards where on-board npm build hits OOM |
 
+### Development
+
+The gateway is a `gateway/` Python package (see `gateway/app.py` for the entry point;
+`grbl_lcnc_gateway.py` is a thin compatibility shim that the systemd service invokes).
+
+Tests run without hardware — `pyserial` is imported but no port is opened, and
+`rs274ngc` degrades gracefully when absent:
+
+```bash
+pip install fastapi uvicorn websockets pyserial pytest pytest-asyncio ruff
+pytest -q                      # 43 tests
+ruff check gateway/ tests/
+```
+
+CI (`.github/workflows/ci.yml`) runs both on every push and pull request.
+
+The WebSocket / HTTP protocol is documented in [`docs/protocol.md`](docs/protocol.md);
+its command table is generated from the dispatch table with
+`python3 tools/gen_protocol.py --write`.
+
 ---
 
 ## Canon call mapping
@@ -299,17 +319,19 @@ See [LICENSE](LICENSE) for details.
 
 ---
 
-## Rev.4 — WebUI Integration (grbl_lcnc_gateway.py)
+## WebUI Integration (gateway package)
 
-Rev.4 adds a WebSocket gateway that connects the
+The gateway adds a WebSocket server that connects the
 [lcnc-suite](https://github.com/bildobodo/lcnc-suite) web frontend to the
-rs274ngc bridge and grblHAL backend.
+rs274ngc bridge and grblHAL backend. (Originally added in Rev.4 as a single
+`grbl_lcnc_gateway.py`; refactored into the `gateway/` package — that filename
+is now a compatibility shim.)
 
 ```
 lcnc-webui (Vue 3 — lcnc-suite)
-      │  WebSocket JSON (lcnc-suite protocol)
+      │  WebSocket JSON (lcnc-suite protocol — see docs/protocol.md)
       ▼
-grbl_lcnc_gateway.py          ← this file
+gateway/ package              ← grbl_lcnc_gateway.py shim → gateway.app:main
   ├─ status 30 Hz push        ← grblHAL ? polling
   ├─ viewer_gcode             ← rs274ngc dry-run → toolpath preview
   ├─ cycle_start / auto_step  ← rs274ngc → grblHAL streaming
