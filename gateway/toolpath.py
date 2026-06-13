@@ -60,7 +60,8 @@ def extract_commands(ngc_path: str) -> list[str]:
 
 def _estimate_time(commands: list, rapid_mm_min: float = 3000.0) -> float:
     """コマンドリストから推定加工時間（秒）を計算する。"""
-    import math, re
+    import math
+    import re
     pos  = [0.0, 0.0, 0.0]
     feed = 1000.0
     total = 0.0

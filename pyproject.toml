@@ -1,0 +1,21 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# E501 行長は line-length に従う / 既存コードのスタイルを尊重し最小限のルール
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line too long (viewer_init の kinematics JSON リテラル1行)
+    "E741",  # ambiguous variable name (l 等、既存コードで使用)
+    "E402",  # module import not at top (http_routes の関数内 import が既存)
+    "E702",  # multiple statements (x *= 25.4; y *= 25.4 等の既存スタイル)
+    "E701",  # multiple statements on one line (colon)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["F811", "F401"]

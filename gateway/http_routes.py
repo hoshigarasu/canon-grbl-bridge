@@ -1,6 +1,5 @@
 """HTTP API ルート (settings / files / grbl-settings / editor)。"""
 import asyncio
-import json
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
