@@ -7,7 +7,7 @@ This ELF is a CubeIDE Debug build of
 
 | Field | Value |
 |-------|-------|
-| Source commit | [`6a595bf`](https://github.com/hoshigarasu/grblHAL-STM32U585/commit/6a595bf) |
+| Source commit | [`29938dc`](https://github.com/hoshigarasu/grblHAL-STM32U585/commit/29938dc) |
 | Toolchain | GNU Tools for STM32 14.3.rel1.20251027-0700 (arm-none-eabi-gcc 14.3.1) |
 | Build type | Debug (3.8 MB, includes debug symbols; OpenOCD writes only the ~300 KB loadable sections) |
 | Preprocessor defines | `BOARD_UNO_Q_CNC`, `COREXY=1` (see grblHAL-STM32U585 `BUILD.md`) |
