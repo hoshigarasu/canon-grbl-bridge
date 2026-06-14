@@ -149,7 +149,9 @@ sudo /opt/openocd/bin/openocd \
 
 The committed `firmware/grblHAL_UNO_Q.elf` is the authoritative image (a CubeIDE
 build; the file is large because it carries debug symbols, but OpenOCD writes
-only the ~300 KB of loadable sections).
+only the ~300 KB of loadable sections). See [`firmware/SOURCE.md`](firmware/SOURCE.md)
+for which [grblHAL-STM32U585](https://github.com/hoshigarasu/grblHAL-STM32U585)
+commit this image was built from.
 
 **Why a power cycle is required:** after `reset halt` the STM32U585 boot ROM (RSS)
 is interrupted, and an OpenOCD warm reset (`reset run`) does not bring grblHAL
