@@ -1,23 +1,26 @@
 # firmware/grblHAL_UNO_Q.elf — Provenance
 
-This ELF is a CubeIDE Debug build of
+This ELF is a **CMake Debug build** of
 [grblHAL-STM32U585](https://github.com/hoshigarasu/grblHAL-STM32U585).
 
 ## Current build
 
 | Field | Value |
 |-------|-------|
-| Source commit | [`29938dc`](https://github.com/hoshigarasu/grblHAL-STM32U585/commit/29938dc) |
-| Toolchain | GNU Tools for STM32 14.3.rel1.20251027-0700 (arm-none-eabi-gcc 14.3.1) |
-| Build type | Debug (3.8 MB, includes debug symbols; OpenOCD writes only the ~300 KB loadable sections) |
-| Preprocessor defines | `BOARD_UNO_Q_CNC`, `COREXY=1` (see grblHAL-STM32U585 `BUILD.md`) |
+| Source commit | [`0d0b08d`](https://github.com/hoshigarasu/grblHAL-STM32U585/commit/0d0b08d) |
+| Toolchain | arm-none-eabi-gcc 13.2.1 (Ubuntu apt: gcc-arm-none-eabi 15:13.2.rel1-2) |
+| Build system | CMake (cmake/arm-none-eabi.cmake) — CubeIDE非依存 |
+| Build type | Debug -O0 -g3 (3.9 MB ELF; OpenOCD writes only the ~330 KB loadable sections) |
+| Preprocessor defines | `DEBUG`, `BOARD_UNO_Q_CNC`, `COREXY=1`, `USE_HAL_DRIVER`, `STM32U585xx` |
+| 含むコミット | D10: fix(triac) edge-trigger overheat log (06b5b1e) |
 
 ## Updating this file
 
 Whenever `firmware/grblHAL_UNO_Q.elf` is replaced:
 
-1. Build from a clean `grblHAL-STM32U585` checkout in STM32CubeIDE
-   (see that repo's `BUILD.md` for required preprocessor defines and HAL modules).
+1. Build from a `grblHAL-STM32U585` checkout:
+   - CMake: `cmake -B build-cmake -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi.cmake && cmake --build build-cmake`
+   - CubeIDE: see `BUILD.md` for required preprocessor defines and HAL modules.
 2. Update the **Source commit** row above to the `grblHAL-STM32U585` commit
    the build was made from.
 3. Commit the new `.elf` together with this file in the same commit, with a
