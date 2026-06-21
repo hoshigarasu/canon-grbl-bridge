@@ -7,13 +7,13 @@ This ELF is a **CMake Debug build** of
 
 | Field | Value |
 |-------|-------|
-| Source commit | [`42af0b9`](https://github.com/hoshigarasu/grblHAL-STM32U585/commit/42af0b9) |
+| Source commit | [`f377f9f`](https://github.com/hoshigarasu/grblHAL-STM32U585/commit/f377f9f) |
 | Toolchain | arm-none-eabi-gcc 13.2.1 (Ubuntu apt: gcc-arm-none-eabi 15:13.2.rel1-2) |
 | Build system | CMake (cmake/arm-none-eabi.cmake) — CubeIDE非依存 |
 | Build type | Debug -O0 -g3 (3.8 MB ELF; OpenOCD writes only the ~330 KB loadable sections) |
 | Preprocessor defines | `DEBUG`, `BOARD_UNO_Q_CNC`, `COREXY=1`, `USE_HAL_DRIVER`, `STM32U585xx` |
 | Branch | feature/triac-direct-control |
-| 含むコミット | feat(triac): replace DimmerLink I2C with direct phase control (42af0b9) / D10 edge-trigger (06b5b1e) |
+| 含むコミット | diag(triac): M817 ADC register dump (f377f9f) / direct phase control (42af0b9) |
 
 ## Updating this file
 
