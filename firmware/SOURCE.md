@@ -7,13 +7,13 @@ This ELF is a **CMake Debug build** of
 
 | Field | Value |
 |-------|-------|
-| Source commit | [`428b19f`](https://github.com/hoshigarasu/grblHAL-STM32U585/commit/428b19f) |
+| Source commit | [`a3b7108`](https://github.com/hoshigarasu/grblHAL-STM32U585/commit/a3b7108) |
 | Toolchain | arm-none-eabi-gcc 13.2.1 (Ubuntu apt: gcc-arm-none-eabi 15:13.2.rel1-2) |
 | Build system | CMake (cmake/arm-none-eabi.cmake) — CubeIDE非依存 |
 | Build type | Debug -O0 -g3 (3.8 MB ELF; OpenOCD writes only the ~330 KB loadable sections) |
 | Preprocessor defines | `DEBUG`, `BOARD_UNO_Q_CNC`, `COREXY=1`, `USE_HAL_DRIVER`, `STM32U585xx` |
 | Branch | feature/triac-direct-control |
-| 含むコミット | fix(triac): P100 latching floor 150µs (428b19f) / PA0 pull-up (a47d8ec) |
+| 含むコミット | cleanup: remove M817 diag (a3b7108) / P100 150µs floor (428b19f) / PA0 pull-up (a47d8ec) |
 
 ## Updating this file
 
